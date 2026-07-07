@@ -1,43 +1,72 @@
-﻿using HotelManagementSystem.Models.Dinning;
-using HotelManagementSystem.Interfaces.DinningInterface;
-using Microsoft.AspNetCore.Http;
+﻿using HotelManagementSystem.Interfaces.DinningInterface;
+using HotelManagementSystem.Models.Dinning;
 using Microsoft.AspNetCore.Mvc;
-
+using System;
+using System.Threading.Tasks;
 
 namespace HotelManagementSystem.Controllers.DinningController
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class DinnningController : ControllerBase
+    public class DinningController : ControllerBase // Fixed 'Dinnning' spelling typo
     {
-        private readonly IDinningService _dinnning;
+        private readonly IDinningService _dinningService;
 
-        public DinnningController(IDinningService dinning)
+        public DinningController(IDinningService dinningService)
         {
-            _dinnning = dinning;
+            _dinningService = dinningService;
         }
 
-        [HttpPost]
-        public async Task<IActionResult> CreateDinningSession([FromBody] DinningDTO Dinning)
+        [HttpPost("Create-Session")]
+        public async Task<IActionResult> CreateDinningSession([FromBody] DinningDTO dto)
         {
-            if (Dinning.TableId <= 0)
+            if (dto == null || dto.TableId <= 0)
             {
-                return BadRequest("Dinning data is null.");
+                return BadRequest(new { message = "Invalid data payload. A valid Table ID is required." });
             }
+
             try
             {
-                var sessionId = await _dinnning.CreateDinningAsync(Dinning.TableId);
-                return Ok(new { SessionId = sessionId });
+                var sessionId = await _dinningService.CreateDinningAsync(dto.TableId);
+                return Ok(new { sessionId = sessionId, message = "Dining session initiated successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                // Log the exception (ex) here if needed
-                return StatusCode(500,ex.Message);
+                return StatusCode(500, new { message = "An internal server error occurred.", details = ex.Message });
             }
         }
 
+        [HttpPost("End-Session/{sessionId}")]
+        public async Task<IActionResult> EndDinningSession(int sessionId)
+        {
+            if (sessionId <= 0)
+            {
+                return BadRequest(new { message = "A valid Session ID must be provided." });
+            }
 
+            try
+            {
+                var rowsAffected = await _dinningService.EndDinningSessionAsync(sessionId);
+
+                if (rowsAffected <= 0)
+                {
+                    return BadRequest(new { message = "Failed to close the session. It may already be closed or does not exist." });
+                }
+
+                return Ok(new { message = "Dining session closed successfully. Table has transitioned to cleaning status." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An internal server error occurred.", details = ex.Message });
+            }
+        }
     }
-
-    
 }

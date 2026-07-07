@@ -1,11 +1,10 @@
-﻿using HotelManagementSystem.Interfaces.DinningInterface;
+﻿using HotelManagementSystem.Interfaces.DatabaseConnection;
 using HotelManagementSystem.Interfaces.TableInterface;
 using HotelManagementSystem.Interfaces.UserInterfaces;
-using HotelManagementSystem.Models.Dinning;
 using HotelManagementSystem.Models.Table;
 using QRCoder;
-using System.Drawing; // Note: For .NET 6/7/8+ on Linux, use a cross-platform drawing lib like 'SixLabors.ImageSharp'
-
+using System;
+using System.Threading.Tasks;
 
 namespace HotelManagementSystem.Services.Table
 {
@@ -14,148 +13,148 @@ namespace HotelManagementSystem.Services.Table
         private readonly ITableDLL _table;
         private readonly IUserDLL _userDLL;
 
-        public TableService(ITableDLL table, IUserDLL userDLL) 
+        public TableService(ITableDLL table, IUserDLL userDLL)
         {
             _table = table;
             _userDLL = userDLL;
         }
 
-        public async Task<TableModel> CreateTableAsync(TableModel table)
+        public async Task<TableModel> CreateTableAsync(CreateTable table)
         {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
+            var existingTable = await _table.GetTableByTableNoAsync(table.TableNo);
+
+            if (existingTable != null && existingTable.TableNo > 0)
+            {
+                throw new InvalidOperationException($"Table number {table.TableNo} already exists.");
+            }
+
             var newTable = new TableModel
             {
                 TableNo = table.TableNo,
                 Capacity = table.Capacity,
-                Status = "Available"
+                Status = "Available",
+                CreatedBy = table.CreatedBy,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
             };
+
             return await _table.CreateTableAsync(newTable);
         }
+
         public async Task<int> UpdateTableAsync(UpdateTable table)
         {
-            var newTable = new UpdateTable
-            {
-                TableNo = table.TableNo,
-                UpdatedBy = table.UpdatedBy,
-                UpdatedAt = DateTime.UtcNow,
-                Status = table.Status
-            };
-            return await _table.UpdateTableAsync(newTable);
-
+            if (table == null) throw new ArgumentNullException(nameof(table));
+            return await _table.UpdateTableAsync(table);
         }
-
 
         public async Task<int> BookTableAsync(UpdateTable table)
         {
-            // 1. Fetch the existing table
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
             var existingTable = await _table.GetTableByTableNoAsync(table.TableNo);
 
-            // FIX: Check if the table even exists first!
             if (existingTable == null)
             {
-                throw new Exception($"Table number {table.TableNo} does not exist.");
+                throw new KeyNotFoundException($"Table number {table.TableNo} does not exist.");
             }
 
-            // 2. Validate Statuses
             if (existingTable.Status == "Occupied")
             {
-                throw new Exception("Table is already occupied");
+                throw new InvalidOperationException("Table is already occupied.");
             }
             if (existingTable.Status == "Cleaning")
             {
-                throw new Exception("Table is currently cleaning");
+                throw new InvalidOperationException("Table is currently being cleaned.");
             }
 
-            // 3. Automatically get the best waiter
-            var getWaiter = await _userDLL.AssignWaiterAsync();
-
-            Console.WriteLine($"Assigned Waiter: {getWaiter}");
-
-            // FIX: Modify the existing object properties instead of instantiating a brand new one.
-            // This preserves all other columns (like Table ID, capacity, etc.) in the database.
+            // 1. Double Assignment Protection: Handled internally inside TableDLL via AssignWaiterAsync
             existingTable.Status = "Occupied";
-            existingTable.WaiterId = getWaiter;
-            existingTable.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            existingTable.CreatedBy = table.CreatedBy;
-            existingTable.UpdatedBy = table.CreatedBy;
+            existingTable.UpdatedBy = table.UpdatedBy;
 
-
-            // 4. Save updates back to the database
-            var booktable = await _table.BookTableAsync(existingTable);
-
-            return booktable;
+            // 2. Delegate to DLL which safely assigns the workload-based waiter
+            return await _table.BookTableAsync(existingTable);
         }
+
         public async Task<int> FreeTableAsync(UpdateTable table)
         {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
             var existingTable = await _table.GetTableByTableNoAsync(table.TableNo);
-            Console.WriteLine(existingTable.TableNo);
 
-            if (existingTable.Status == "Available")
+            if (existingTable == null)
             {
-                throw new Exception("Table is already available");
-            }
-            if(existingTable.Status == "Occupied")
-            {
-                throw new Exception("Sorry table is Occupied");
+                throw new KeyNotFoundException($"Table number {table.TableNo} does not exist.");
             }
 
-            var newTable = new UpdateTable
+            // FIX: Logical inversion. To FREE a table, it MUST be occupied. 
+            if (existingTable.Status == "Occupied")
+            {
+                throw new InvalidOperationException("Table is already available.");
+            }
+            if (existingTable.Status != "Cleaning")
+            {  
+                throw new InvalidOperationException($"Cannot free a table that is currently '{existingTable.Status}'. It must be Cleaned first.");
+            }
+
+            // Instead of instantiating a raw UpdateTable DTO manually, map it cleanly
+            var updatedData = new UpdateTable
             {
                 TableNo = table.TableNo,
                 UpdatedBy = table.UpdatedBy,
-                UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
-                Status = "Available",
-                WaiterId = null
+                Status = "Available" // Standard Restaurant Workflow: Available -> Occupied -> Cleaning -> 
             };
 
-            Console.WriteLine(newTable.Status);
-            Console.WriteLine(newTable.UpdatedBy);
-            Console.WriteLine(newTable.WaiterId);
-            return await _table.UpdateTableAsync(newTable);
-
+            return await _table.UpdateTableAsync(updatedData);
         }
+
         public async Task<int> CleanTableAsync(UpdateTable table)
         {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
             var existingTable = await _table.GetTableByTableNoAsync(table.TableNo);
 
+            if (existingTable == null)
+            {
+                throw new KeyNotFoundException($"Table number {table.TableNo} does not exist.");
+            }
+
+            // FIX: Typo matching ("Cleaning" vs "Cleanning")   
             if (existingTable.Status == "Available")
             {
-                throw new Exception("Table is already Cleaned");
+                throw new InvalidOperationException("Table is already cleaned and available.");
             }
-            if(existingTable.Status == "Cleanning")
+            if (existingTable.Status == "Cleaning")
             {
-                throw new Exception("Table is Cleaning");
+                throw new InvalidOperationException("Table is already in the cleaning process.");
             }
-                
-            var newTable = new UpdateTable
+            if(existingTable.Status != "Occupied")
+            {
+                throw new InvalidOperationException($"Cannot free a table that is currently '{existingTable.Status}'. It must be Occupied first.");
+            }
+
+            var updatedData = new UpdateTable
             {
                 TableNo = table.TableNo,
                 UpdatedBy = table.UpdatedBy,
-                UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
-                Status = "Cleanning"
+                Status = "Cleaning" // Once cleaning is done, it transitions back to Available
             };
-            Console.WriteLine(newTable.UpdatedAt);
-            return await _table.UpdateTableAsync(newTable);
 
+            return await _table.UpdateTableAsync(updatedData);
         }
-        
-            public string GenerateTableQRCode(int tableNo, int updatedById)
-                {
-                        // 1. Construct the payload (this is what is encoded in the QR)
-                        // Example: A JSON string containing the data
-                    string payload = $"TableNo:{tableNo}|UpdatedBy:{updatedById}|Timestamp:{DateTime.UtcNow}";
 
-                    // 2. Generate the QR Code
-                    using (QRCodeGenerator qrGenerator = new QRCodeGenerator())
-                    {
-                        QRCodeData qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
-                        PngByteQRCode qrCode = new PngByteQRCode(qrCodeData);
+        public byte[] GenerateTableQRCode(int tableNo, int updatedById)
+        {
+            string payload = $"TableNo:{tableNo}|UpdatedBy:{updatedById}|Timestamp:{DateTime.UtcNow:O}";
 
-                        // 3. Convert to byte array
-                        byte[] qrCodeImage = qrCode.GetGraphic(20);
+            using (QRCodeGenerator qrGenerator = new QRCodeGenerator())
+            {
+                QRCodeData qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+                PngByteQRCode qrCode = new PngByteQRCode(qrCodeData);
 
-                        // 4. Return as Base64 string to send to the frontend
-                        return Convert.ToBase64String(qrCodeImage);
-                    }
-                }
-}
+                return qrCode.GetGraphic(20);
+            }
+        }
+    }
 }

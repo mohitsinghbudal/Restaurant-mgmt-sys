@@ -1,16 +1,21 @@
 using HotelManagementSystem.DLL.AssignWaiterDLL;
+using HotelManagementSystem.DLL.CategoryDLL;
 using HotelManagementSystem.DLL.DinningDLL;
 using HotelManagementSystem.DLL.Tables;
+using HotelManagementSystem.DLL.UnitDLL;
 using HotelManagementSystem.DLL.Users;
 using HotelManagementSystem.Helper.JWT;
+using HotelManagementSystem.Interfaces.CategoryInterface;
 using HotelManagementSystem.Interfaces.DatabaseConnection;
 using HotelManagementSystem.Interfaces.DinningInterface;
 using HotelManagementSystem.Interfaces.JWTInterface;
 using HotelManagementSystem.Interfaces.TableInterface;
+using HotelManagementSystem.Interfaces.Units;
 using HotelManagementSystem.Interfaces.User;
 using HotelManagementSystem.Interfaces.UserInterfaces;
 using HotelManagementSystem.Services.Dinning;
 using HotelManagementSystem.Services.Table;
+using HotelManagementSystem.Services.Units;
 using HotelManagementSystem.Services.User;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Data.SqlClient;
@@ -35,14 +40,17 @@ builder.Services.AddScoped<IUserDLL, UserDLL>();
 builder.Services.AddScoped<ITableDLL, TableDLL>();
 builder.Services.AddScoped<IDinningDLL, DinningDLL>();
 builder.Services.AddScoped<IWaiterDLL, AssignWaiterDLL>();
+builder.Services.AddScoped<IUnitDLL, UnitDLL>();
+builder.Services.AddScoped<ICategoryDLL, CategoryDLL>();
+//builder.Services.AddScoped<IMenyDLL, MenuDLL>();
+//builder Service.AddScoped<IMenuServices, MenuServices>();
+
 //for service layer
 builder.Services.AddScoped<IUserService, UserServices>();
 builder.Services.AddScoped<ITableService, TableService>();
 builder.Services.AddScoped<IDinningService, DinningService>();
-
-
-
-
+builder.Services.AddScoped<IUnitServices, UnitServices>();
+builder.Services.AddScoped<IUnitServices, UnitServices>();
 
 
 
